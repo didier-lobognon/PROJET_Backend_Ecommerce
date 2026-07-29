@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>Réservation rejetée</title></head>
+<body style="font-family:Arial,sans-serif;color:#0f172a;max-width:600px;margin:0 auto;padding:24px">
+  <h1 style="color:#1a56db">Kaniê</h1>
+  <h2>Réservation non disponible</h2>
+  <p>Bonjour {{customerName}},</p>
+  <p>Malheureusement, nous ne pouvons pas honorer votre réservation pour <strong>{{productName}}</strong> pour le moment.</p>
+  {{#if adminNote}}<p>{{adminNote}}</p>{{/if}}
+  <p>N'hésitez pas à nous contacter pour une alternative ou une autre recherche.</p>
+  <p style="color:#64748b;font-size:12px;margin-top:32px">Kaniê — Abidjan, Côte d'Ivoire</p>
+</body>
+</html>

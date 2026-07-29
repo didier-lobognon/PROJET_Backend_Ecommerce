@@ -1,0 +1,748 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CLIENT
+  OPERATOR
+  ADMIN
+}
+
+enum ProductStatus {
+  AVAILABLE
+  UNAVAILABLE
+  IN_DELIVERY
+  SOLD
+}
+
+enum ProductMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+  SALE
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  passwordHash String         @map("password_hash")
+  role         UserRole       @default(CLIENT)
+  phone        String?
+  firstName       String?        @map("first_name")
+  lastName        String?        @map("last_name")
+  emailVerifiedAt DateTime?      @map("email_verified_at")
+  isActive        Boolean        @default(true) @map("is_active")
+  emailMarketingConsent    Boolean   @default(false) @map("email_marketing_consent")
+  whatsappMarketingConsent Boolean   @default(false) @map("whatsapp_marketing_consent")
+  marketingConsentAt       DateTime? @map("marketing_consent_at")
+  marketingConsentSource   String?   @map("marketing_consent_source")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  refreshTokens RefreshToken[]
+  cart          Cart?
+  orders        Order[]
+  notifications NotificationLog[]
+  wishlist      WishlistItem[]
+  addresses     UserAddress[]
+  customerSegments UserCustomerSegment[]
+  interactions  CustomerInteraction[]
+  campaignRecipients CampaignRecipient[]
+  productReservations ProductReservation[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Category {
+  id        String     @id @default(uuid())
+  name      String
+  slug      String     @unique
+  parentId  String?    @map("parent_id")
+  imageUrl  String?    @map("image_url")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  parent    Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryHierarchy")
+  products  Product[]
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+model Product {
+  id            String            @id @default(uuid())
+  name          String
+  slug          String            @unique
+  reference     String            @unique
+  description   String?
+  price         Decimal           @db.Decimal(12, 2)
+  discountPrice Decimal?          @db.Decimal(12, 2) @map("discount_price")
+  stock         Int               @default(0)
+  status        ProductStatus     @default(AVAILABLE)
+  categoryId    String            @map("category_id")
+  dimensions    String?
+  weight        Decimal?          @db.Decimal(10, 3)
+  location      String?
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  deletedAt     DateTime?         @map("deleted_at")
+  category      Category          @relation(fields: [categoryId], references: [id])
+  images        ProductImage[]
+  movements     ProductMovement[]
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  wishlistItems WishlistItem[]
+  promotions    Promotion[]
+
+  @@index([categoryId])
+  @@index([reference])
+  @@index([status])
+  @@map("products")
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String   @map("product_id")
+  url       String
+  alt       String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+model ProductMovement {
+  id        String              @id @default(uuid())
+  productId String              @map("product_id")
+  type      ProductMovementType
+  quantity  Int
+  note      String?
+  createdAt DateTime            @default(now()) @map("created_at")
+  product   Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([createdAt])
+  @@map("product_movements")
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum NotificationChannel {
+  EMAIL
+  WHATSAPP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String?    @unique @map("user_id")
+  sessionId String?    @unique @map("session_id")
+  expiresAt DateTime   @map("expires_at")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+  abandonmentReminders CartAbandonmentReminder[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  cartId    String   @map("cart_id")
+  productId String   @map("product_id")
+  quantity  Int      @default(1)
+  unitPrice Decimal  @map("unit_price") @db.Decimal(12, 2)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@unique([cartId, productId])
+  @@index([cartId])
+  @@map("cart_items")
+}
+
+model Order {
+  id              String               @id @default(uuid())
+  orderNumber     String               @unique @map("order_number")
+  userId          String?              @map("user_id")
+  status          OrderStatus          @default(PENDING)
+  subtotal        Decimal              @db.Decimal(12, 2)
+  shipping        Decimal              @default(0) @db.Decimal(12, 2)
+  total           Decimal              @db.Decimal(12, 2)
+  shippingAddress Json                 @map("shipping_address")
+  customerEmail   String               @map("customer_email")
+  customerPhone   String?              @map("customer_phone")
+  customerName    String               @map("customer_name")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+  user            User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items           OrderItem[]
+  statusHistory   OrderStatusHistory[]
+  payments        Payment[]
+  notifications   NotificationLog[]
+  interactions    CustomerInteraction[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([orderNumber])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model Payment {
+  id         String         @id @default(uuid())
+  orderId    String         @map("order_id")
+  amount     Decimal        @db.Decimal(12, 2)
+  currency   String         @default("XOF")
+  provider   String         @default("paydunya")
+  externalId String?        @map("external_id")
+  status     PaymentStatus  @default(PENDING)
+  paidAt     DateTime?      @map("paid_at")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+  order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  events     PaymentEvent[]
+
+  @@index([orderId])
+  @@index([externalId])
+  @@index([status])
+  @@map("payments")
+}
+
+model PaymentEvent {
+  id          String   @id @default(uuid())
+  paymentId   String?  @map("payment_id")
+  externalId  String   @unique @map("external_id")
+  payload     Json
+  processedAt DateTime @default(now()) @map("processed_at")
+  payment     Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([paymentId])
+  @@map("payment_events")
+}
+
+model OrderItem {
+  id               String   @id @default(uuid())
+  orderId          String   @map("order_id")
+  productId        String?  @map("product_id")
+  productName      String   @map("product_name")
+  productReference String?  @map("product_reference")
+  quantity         Int
+  unitPrice        Decimal  @map("unit_price") @db.Decimal(12, 2)
+  createdAt        DateTime @default(now()) @map("created_at")
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product          Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid())
+  orderId   String      @map("order_id")
+  status    OrderStatus
+  note      String?
+  createdAt DateTime    @default(now()) @map("created_at")
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([createdAt])
+  @@map("order_status_history")
+}
+
+model NotificationLog {
+  id        String               @id @default(uuid())
+  orderId   String?              @map("order_id")
+  userId    String?              @map("user_id")
+  channel   NotificationChannel
+  template  String
+  recipient String
+  status    NotificationStatus   @default(PENDING)
+  jobId     String?              @map("job_id")
+  error     String?
+  sentAt    DateTime?            @map("sent_at")
+  createdAt DateTime             @default(now()) @map("created_at")
+  order     Order?               @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  user      User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notification_logs")
+}
+
+// ─── Phase 8: Content & Vitrine ─────────────────────────────────────────────
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum HomepageBannerSlot {
+  MAIN
+  GRID_LEFT
+  GRID_RIGHT
+  HERO_CARD_TOP
+  HERO_CARD_BOTTOM
+}
+
+enum HomepageBannerButtonStyle {
+  PRIMARY
+  TEAL
+  ORANGE
+}
+
+enum HomepageBannerTextAlign {
+  LEFT
+  RIGHT
+}
+
+enum HomepageBannerImageSide {
+  LEFT
+  RIGHT
+}
+
+model Post {
+  id          String        @id @default(uuid())
+  title       String
+  slug        String        @unique
+  excerpt     String?
+  content     String
+  coverImage  String?       @map("cover_image")
+  status      ContentStatus @default(DRAFT)
+  authorId    String?       @map("author_id")
+  publishedAt DateTime?     @map("published_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([publishedAt])
+  @@map("posts")
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  title       String
+  slug        String        @unique
+  description String
+  coverImage  String?       @map("cover_image")
+  images      String[]      @default([])
+  status      ContentStatus @default(DRAFT)
+  clientName  String?       @map("client_name")
+  completedAt DateTime?     @map("completed_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@map("projects")
+}
+
+model Course {
+  id          String        @id @default(uuid())
+  title       String
+  slug        String        @unique
+  description String
+  content     String?
+  coverImage  String?       @map("cover_image")
+  duration    String?
+  level       String?
+  status      ContentStatus @default(DRAFT)
+  publishedAt DateTime?     @map("published_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@map("courses")
+}
+
+model Testimonial {
+  id         String   @id @default(uuid())
+  authorName String   @map("author_name")
+  company    String?
+  content    String
+  rating     Int      @default(5)
+  isVisible  Boolean  @default(true) @map("is_visible")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("testimonials")
+}
+
+model ContactRequest {
+  id        String   @id @default(uuid())
+  fullName  String   @map("full_name")
+  email     String
+  phone     String?
+  subject   String
+  message   String
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("contact_requests")
+}
+
+enum ReservationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  DELIVERED
+}
+
+model ProductReservation {
+  id                String             @id @default(uuid())
+  userId            String?            @map("user_id")
+  productName       String             @map("product_name")
+  searchQuery       String?            @map("search_query")
+  description       String?
+  estimatedBudget   Decimal?           @map("estimated_budget") @db.Decimal(12, 2)
+  imageUrl          String?            @map("image_url")
+  fullName          String             @map("full_name")
+  email             String
+  phone             String?
+  status            ReservationStatus  @default(PENDING)
+  adminNote         String?            @map("admin_note")
+  offeredDiscount   Int?               @map("offered_discount")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  user              User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("product_reservations")
+}
+
+// ─── Phase 9+: Template Features ────────────────────────────────────────────
+
+model WishlistItem {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  productId String   @map("product_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@map("wishlist_items")
+}
+
+model NewsletterSubscriber {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("newsletter_subscribers")
+}
+
+model Promotion {
+  id              String   @id @default(uuid())
+  title           String
+  tagline         String?
+  description     String?
+  imageUrl        String?  @map("image_url")
+  productId       String?  @map("product_id")
+  discount        Int
+  startAt         DateTime @map("start_at")
+  endAt           DateTime @map("end_at")
+  isActive        Boolean  @default(true) @map("is_active")
+  showOnHomepage  Boolean  @default(false) @map("show_on_homepage")
+  createdAt       DateTime @default(now()) @map("created_at")
+  product         Product? @relation(fields: [productId], references: [id])
+
+  @@index([isActive])
+  @@index([endAt])
+  @@index([showOnHomepage])
+  @@map("promotions")
+}
+
+model HomepageBanner {
+  id            String                    @id @default(uuid())
+  slot          HomepageBannerSlot        @unique
+  tagline       String?
+  title         String
+  description   String?
+  highlightText String?                   @map("highlight_text")
+  imageUrl      String?                   @map("image_url")
+  linkUrl       String                    @map("link_url")
+  buttonLabel   String                    @map("button_label")
+  bgColor              String?                   @map("bg_color")
+  priceAmount          Decimal?                  @map("price_amount") @db.Decimal(12, 2)
+  originalPriceAmount  Decimal?                  @map("original_price_amount") @db.Decimal(12, 2)
+  buttonStyle          HomepageBannerButtonStyle @default(PRIMARY) @map("button_style")
+  textAlign     HomepageBannerTextAlign   @default(LEFT) @map("text_align")
+  imageSide     HomepageBannerImageSide   @default(RIGHT) @map("image_side")
+  isActive      Boolean                   @default(true) @map("is_active")
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  updatedAt     DateTime                  @updatedAt @map("updated_at")
+
+  @@map("homepage_banners")
+}
+
+model Coupon {
+  id             String    @id @default(uuid())
+  code           String    @unique
+  discountType   String    @map("discount_type")
+  discountValue  Decimal   @map("discount_value") @db.Decimal(12, 2)
+  minOrderAmount Decimal?  @map("min_order_amount") @db.Decimal(12, 2)
+  maxUses        Int?      @map("max_uses")
+  usedCount      Int       @default(0) @map("used_count")
+  expiresAt      DateTime? @map("expires_at")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([code])
+  @@map("coupons")
+}
+
+model UserAddress {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  label     String   @default("Domicile")
+  fullName  String   @map("full_name")
+  phone     String
+  address   String
+  city      String
+  commune   String?
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_addresses")
+}
+
+// ─── Phase 6+ : CRM, campagnes, automation ───────────────────────────────────
+
+enum InteractionChannel {
+  EMAIL
+  WHATSAPP
+  ORDER
+  CONTACT
+  CAMPAIGN
+  SYSTEM
+}
+
+enum InteractionDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum CampaignChannel {
+  EMAIL
+  WHATSAPP
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum CartAbandonmentStatus {
+  SCHEDULED
+  SENT
+  CANCELLED
+  SKIPPED
+}
+
+model CustomerTag {
+  id          String            @id @default(uuid())
+  name        String            @unique
+  slug        String            @unique
+  color       String            @default("#E8920A")
+  description String?
+  createdAt   DateTime          @default(now()) @map("created_at")
+  segments    CustomerSegment[]
+
+  @@map("customer_tags")
+}
+
+model CustomerSegment {
+  id          String              @id @default(uuid())
+  name        String              @unique
+  slug        String              @unique
+  description String?
+  tagId       String?             @map("tag_id")
+  rules       Json                @default("{}")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  tag         CustomerTag?        @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  users       UserCustomerSegment[]
+  campaigns   MarketingCampaign[]
+
+  @@index([tagId])
+  @@map("customer_segments")
+}
+
+model UserCustomerSegment {
+  userId     String   @map("user_id")
+  segmentId  String   @map("segment_id")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  segment    CustomerSegment  @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  @@id([userId, segmentId])
+  @@index([segmentId])
+  @@map("user_customer_segments")
+}
+
+model CustomerInteraction {
+  id         String               @id @default(uuid())
+  userId     String?              @map("user_id")
+  phone      String?
+  email      String?
+  channel    InteractionChannel
+  direction  InteractionDirection
+  type       String
+  subject    String?
+  body       String?
+  metadata   Json?
+  orderId    String?              @map("order_id")
+  campaignId String?              @map("campaign_id")
+  createdAt  DateTime             @default(now()) @map("created_at")
+  user       User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  order      Order?               @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  campaign   MarketingCampaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([phone])
+  @@index([channel])
+  @@index([createdAt])
+  @@map("customer_interactions")
+}
+
+model FaqScenario {
+  id           String   @id @default(uuid())
+  title        String
+  keywords     String[]
+  responseText String   @map("response_text")
+  isActive     Boolean  @default(true) @map("is_active")
+  priority     Int      @default(0)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("faq_scenarios")
+}
+
+model WhatsappInboundEvent {
+  id                String   @id @default(uuid())
+  externalMessageId String   @unique @map("external_message_id")
+  phone             String
+  messageText       String?  @map("message_text")
+  payload           Json
+  faqScenarioId     String?  @map("faq_scenario_id")
+  repliedAt         DateTime? @map("replied_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([phone])
+  @@index([createdAt])
+  @@map("whatsapp_inbound_events")
+}
+
+model CartAbandonmentReminder {
+  id           String                @id @default(uuid())
+  cartId       String                @map("cart_id")
+  userId       String?               @map("user_id")
+  phone        String?
+  email        String?
+  jobId        String?               @map("job_id")
+  status       CartAbandonmentStatus @default(SCHEDULED)
+  scheduledFor DateTime              @map("scheduled_for")
+  sentAt       DateTime?             @map("sent_at")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  cart         Cart                  @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  @@index([cartId])
+  @@index([status])
+  @@index([scheduledFor])
+  @@map("cart_abandonment_reminders")
+}
+
+model MarketingCampaign {
+  id               String           @id @default(uuid())
+  name             String
+  channel          CampaignChannel
+  segmentId        String?          @map("segment_id")
+  subject          String?
+  body             String
+  whatsappTemplate String?          @map("whatsapp_template")
+  status           CampaignStatus   @default(DRAFT)
+  scheduledAt      DateTime?        @map("scheduled_at")
+  startedAt        DateTime?        @map("started_at")
+  completedAt      DateTime?        @map("completed_at")
+  totalRecipients  Int              @default(0) @map("total_recipients")
+  sentCount        Int              @default(0) @map("sent_count")
+  failedCount      Int              @default(0) @map("failed_count")
+  createdById      String?          @map("created_by_id")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  segment          CustomerSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  recipients       CampaignRecipient[]
+  interactions     CustomerInteraction[]
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@map("marketing_campaigns")
+}
+
+model CampaignRecipient {
+  id         String             @id @default(uuid())
+  campaignId String             @map("campaign_id")
+  userId     String             @map("user_id")
+  status     NotificationStatus @default(PENDING)
+  error      String?
+  sentAt     DateTime?          @map("sent_at")
+  campaign   MarketingCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId])
+  @@index([campaignId])
+  @@index([userId])
+  @@map("campaign_recipients")
+}
